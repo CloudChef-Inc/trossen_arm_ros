@@ -330,7 +330,7 @@ TrossenArmHardwareInterface::on_configure(const rclcpp_lifecycle::State & /*prev
   }
 
   try {
-    pub_node_ = rclcpp::Node::make_shared("effort_publisher", ns);
+    pub_node_ = rclcpp::Node::make_shared("effort_publisher", "components/" + ns);
 
     // 200 Hz topics — standard QoS
     external_efforts_pub_ = pub_node_->create_publisher<std_msgs::msg::Float64MultiArray>(
@@ -357,7 +357,7 @@ TrossenArmHardwareInterface::on_configure(const rclcpp_lifecycle::State & /*prev
 
     RCLCPP_INFO(
       get_logger(),
-      "Extra effort publishers created in namespace '/%s' (%zu joints).",
+      "Extra effort publishers created in namespace '/components/%s' (%zu joints).",
       ns.c_str(), n);
   } catch (const std::exception & e) {
     RCLCPP_WARN(
