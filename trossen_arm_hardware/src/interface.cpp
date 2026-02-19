@@ -312,6 +312,64 @@ TrossenArmHardwareInterface::on_configure(const rclcpp_lifecycle::State & /*prev
     driver_ip_address_.c_str(),
     end_effector_str_.c_str());
 
+  // ── Extra effort publishers ──────────────────────────────────────────
+  // Create a standalone ROS node for publishing external_efforts,
+  // compensation_efforts, and effort_corrections.  These fields are
+  // available from the SDK every cycle but not exposed via ros2_control
+  // state interfaces / JointState.  Publishing directly from the
+  // hardware interface avoids URDF and controller plugin changes.
+
+  // Extract namespace from joint prefix (e.g. "follower_left/joint_0" -> "follower_left")
+  std::string ns;
+  if (!info_.joints.empty()) {
+    const auto & first_joint = info_.joints[0].name;
+    auto slash_pos = first_joint.find('/');
+    if (slash_pos != std::string::npos) {
+      ns = first_joint.substr(0, slash_pos);
+    }
+  }
+
+  try {
+    pub_node_ = rclcpp::Node::make_shared("effort_publisher", ns);
+
+    // 200 Hz topics — standard QoS
+    external_efforts_pub_ = pub_node_->create_publisher<std_msgs::msg::Float64MultiArray>(
+      "external_efforts", 10);
+    compensation_efforts_pub_ = pub_node_->create_publisher<std_msgs::msg::Float64MultiArray>(
+      "compensation_efforts", 10);
+
+    // Latched (transient_local) topic — bag captures it at record start
+    rclcpp::QoS qos_latched(1);
+    qos_latched.transient_local();
+    effort_corrections_pub_ = pub_node_->create_publisher<std_msgs::msg::Float64MultiArray>(
+      "effort_corrections", qos_latched);
+
+    // Pre-allocate per-cycle messages
+    const size_t n = info_.joints.size();
+    external_efforts_msg_.data.resize(n, 0.0);
+    compensation_efforts_msg_.data.resize(n, 0.0);
+
+    // Publish effort_corrections once (static config from the arm controller)
+    auto corrections = arm_driver_->get_effort_corrections();
+    std_msgs::msg::Float64MultiArray corrections_msg;
+    corrections_msg.data = corrections;
+    effort_corrections_pub_->publish(corrections_msg);
+
+    RCLCPP_INFO(
+      get_logger(),
+      "Extra effort publishers created in namespace '/%s' (%zu joints).",
+      ns.c_str(), n);
+  } catch (const std::exception & e) {
+    RCLCPP_WARN(
+      get_logger(),
+      "Failed to create extra effort publishers: %s. "
+      "Extended effort data will NOT be available.", e.what());
+    pub_node_.reset();
+    external_efforts_pub_.reset();
+    compensation_efforts_pub_.reset();
+    effort_corrections_pub_.reset();
+  }
+
   return CallbackReturn::SUCCESS;
 }
 
@@ -343,6 +401,15 @@ TrossenArmHardwareInterface::read(
 
   // Get joint efforts
   joint_efforts_ = robot_output_.joint.all.efforts;
+
+  // Publish external_efforts and compensation_efforts (same cycle data)
+  if (external_efforts_pub_ && compensation_efforts_pub_) {
+    external_efforts_msg_.data = robot_output_.joint.all.external_efforts;
+    external_efforts_pub_->publish(external_efforts_msg_);
+
+    compensation_efforts_msg_.data = robot_output_.joint.all.compensation_efforts;
+    compensation_efforts_pub_->publish(compensation_efforts_msg_);
+  }
 
   return return_type::OK;
 }
@@ -574,6 +641,12 @@ TrossenArmHardwareInterface::on_deactivate(const rclcpp_lifecycle::State & /*pre
 CallbackReturn
 TrossenArmHardwareInterface::on_cleanup(const rclcpp_lifecycle::State & /*previous_state*/)
 {
+  // Tear down extra effort publishers before the driver
+  external_efforts_pub_.reset();
+  compensation_efforts_pub_.reset();
+  effort_corrections_pub_.reset();
+  pub_node_.reset();
+
   robot_output_ = trossen_arm::RobotOutput();
   arm_driver_.reset();
 

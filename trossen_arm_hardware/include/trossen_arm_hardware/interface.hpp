@@ -43,6 +43,7 @@
 #include "rclcpp_lifecycle/state.hpp"
 #include "rclcpp/logger.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/float64_multi_array.hpp"
 
 namespace trossen_arm_hardware
 {
@@ -145,6 +146,18 @@ protected:
   const size_t INDEX_STATE_INTERFACE_POSITION_ = 0;
   const size_t INDEX_STATE_INTERFACE_VELOCITY_ = 1;
   const size_t INDEX_STATE_INTERFACE_EFFORT_ = 2;
+
+  // Publisher node for extra effort topics (created in on_configure)
+  std::shared_ptr<rclcpp::Node> pub_node_{nullptr};
+
+  // Publishers for extra effort data not carried by JointState
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr external_efforts_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr compensation_efforts_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr effort_corrections_pub_;
+
+  // Pre-allocated messages to avoid per-cycle allocation
+  std_msgs::msg::Float64MultiArray external_efforts_msg_;
+  std_msgs::msg::Float64MultiArray compensation_efforts_msg_;
 
   // Control mode flags
   bool arm_position_mode_running_{false};

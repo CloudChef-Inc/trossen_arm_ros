@@ -7,12 +7,14 @@ find_package(libtrossen_arm REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(std_msgs REQUIRED)
 
 set(ROS_DEPENDENCIES
   hardware_interface
   pluginlib
   rclcpp
   rclcpp_lifecycle
+  std_msgs
 )
 
 include_directories(
